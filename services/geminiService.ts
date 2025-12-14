@@ -9,7 +9,7 @@ const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 export const suggestRecipe = async (availableIngredients: Ingredient[], prompt: string) => {
   if (!ai) {
-    throw new Error("API Key no configurada. Configura la variable de entorno API_KEY.");
+    throw new Error("API Key no configurada. Configura la variable de entorno API_KEY en Vercel.");
   }
 
   const ingredientList = availableIngredients.map(i => `${i.name} (${formatStock(i.currentStock, i.unit)})`).join(', ');
@@ -76,7 +76,7 @@ export const parseOrderFromText = async (text: string, products: Product[]): Pro
 
 export const analyzeProductionData = async (orders: Order[], inventory: Ingredient[]) => {
     if (!ai) {
-      throw new Error("API Key no configurada.");
+      throw new Error("API Key no configurada. Configura la variable API_KEY en Vercel.");
     }
 
     // Simplify orders for prompt
