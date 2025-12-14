@@ -1,16 +1,27 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Ingredient, Product, Order, OrderStatus, UnitType, Customer } from '../types';
 import { toBaseUnit, fromBaseUnit } from '../utils/conversions';
+import { db } from '../services/firebase';
+import { 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  onSnapshot, 
+  writeBatch,
+  getDocs
+} from 'firebase/firestore';
 
-// Initial Mock Data based on User Request
+// Initial Mock Data (Used for seeding DB if empty)
 const INITIAL_INGREDIENTS: Ingredient[] = [
-  { id: '1', name: 'Margarina', currentStock: 10000, unit: UnitType.KILOGRAMS, costPerUnit: 2490, minStock: 2000 }, // 10kg
-  { id: '2', name: 'Harina', currentStock: 32000, unit: UnitType.KILOGRAMS, costPerUnit: 700, minStock: 5000 }, // 32kg
-  { id: '3', name: 'Mantequilla', currentStock: 23000, unit: UnitType.KILOGRAMS, costPerUnit: 7600, minStock: 2000 }, // 23kg
-  { id: '4', name: 'Azúcar blanca', currentStock: 18000, unit: UnitType.KILOGRAMS, costPerUnit: 860, minStock: 3000 }, // 18kg
-  { id: '5', name: 'Huevos', currentStock: 59, unit: UnitType.UNITS, costPerUnit: 216, minStock: 12 }, // 59u
-  { id: '6', name: 'Manjar', currentStock: 20000, unit: UnitType.KILOGRAMS, costPerUnit: 2050, minStock: 3000 }, // 20kg
-  { id: '7', name: 'Crema chantilly', currentStock: 6000, unit: UnitType.LITERS, costPerUnit: 3690, minStock: 1000 }, // 6L
+  { id: '1', name: 'Margarina', currentStock: 10000, unit: UnitType.KILOGRAMS, costPerUnit: 2490, minStock: 2000 },
+  { id: '2', name: 'Harina', currentStock: 32000, unit: UnitType.KILOGRAMS, costPerUnit: 700, minStock: 5000 },
+  { id: '3', name: 'Mantequilla', currentStock: 23000, unit: UnitType.KILOGRAMS, costPerUnit: 7600, minStock: 2000 },
+  { id: '4', name: 'Azúcar blanca', currentStock: 18000, unit: UnitType.KILOGRAMS, costPerUnit: 860, minStock: 3000 },
+  { id: '5', name: 'Huevos', currentStock: 59, unit: UnitType.UNITS, costPerUnit: 216, minStock: 12 },
+  { id: '6', name: 'Manjar', currentStock: 20000, unit: UnitType.KILOGRAMS, costPerUnit: 2050, minStock: 3000 },
+  { id: '7', name: 'Crema chantilly', currentStock: 6000, unit: UnitType.LITERS, costPerUnit: 3690, minStock: 1000 },
 ];
 
 const INITIAL_PRODUCTS: Product[] = [
@@ -20,10 +31,10 @@ const INITIAL_PRODUCTS: Product[] = [
     price: 35000, 
     description: 'Bizcocho húmedo con ganache.',
     recipe: [
-      { ingredientId: '2', quantity: 500, unit: UnitType.GRAMS }, // Harina
-      { ingredientId: '4', quantity: 400, unit: UnitType.GRAMS }, // Azúcar
-      { ingredientId: '5', quantity: 4, unit: UnitType.UNITS },   // Huevos
-      { ingredientId: '6', quantity: 200, unit: UnitType.GRAMS }, // Manjar (usado como ejemplo)
+      { ingredientId: '2', quantity: 500, unit: UnitType.GRAMS },
+      { ingredientId: '4', quantity: 400, unit: UnitType.GRAMS },
+      { ingredientId: '5', quantity: 4, unit: UnitType.UNITS },
+      { ingredientId: '6', quantity: 200, unit: UnitType.GRAMS },
     ]
   },
   { 
@@ -32,10 +43,10 @@ const INITIAL_PRODUCTS: Product[] = [
     price: 12000, 
     description: 'Clásicas de manteca.',
     recipe: [
-      { ingredientId: '2', quantity: 600, unit: UnitType.GRAMS }, // Harina
-      { ingredientId: '4', quantity: 200, unit: UnitType.GRAMS }, // Azúcar
-      { ingredientId: '5', quantity: 2, unit: UnitType.UNITS },   // Huevos
-      { ingredientId: '3', quantity: 250, unit: UnitType.GRAMS }, // Mantequilla
+      { ingredientId: '2', quantity: 600, unit: UnitType.GRAMS },
+      { ingredientId: '4', quantity: 200, unit: UnitType.GRAMS },
+      { ingredientId: '5', quantity: 2, unit: UnitType.UNITS },
+      { ingredientId: '3', quantity: 250, unit: UnitType.GRAMS },
     ]
   }
 ];
@@ -65,6 +76,7 @@ interface BakeryContextType {
   products: Product[];
   orders: Order[];
   customers: Customer[];
+  loading: boolean;
   
   addIngredient: (ing: Ingredient) => void;
   updateIngredientStock: (id: string, newAmount: number, newUnitCost?: number) => void;
@@ -87,95 +99,170 @@ interface BakeryContextType {
 
 const BakeryContext = createContext<BakeryContextType | undefined>(undefined);
 
-// Helper to load from LocalStorage
-const loadFromStorage = <T,>(key: string, fallback: T): T => {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : fallback;
-  } catch (e) {
-    console.error(`Error loading key ${key}`, e);
-    return fallback;
-  }
-};
-
 export const BakeryProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Initialize state from LocalStorage or Fallback
-  const [ingredients, setIngredients] = useState<Ingredient[]>(() => loadFromStorage('bakery_ingredients_v2', INITIAL_INGREDIENTS));
-  const [products, setProducts] = useState<Product[]>(() => loadFromStorage('bakery_products_v2', INITIAL_PRODUCTS));
-  const [orders, setOrders] = useState<Order[]>(() => loadFromStorage('bakery_orders_v2', INITIAL_ORDERS));
-  const [customers, setCustomers] = useState<Customer[]>(() => loadFromStorage('bakery_customers_v2', INITIAL_CUSTOMERS));
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Persistence Effects
-  useEffect(() => { localStorage.setItem('bakery_ingredients_v2', JSON.stringify(ingredients)); }, [ingredients]);
-  useEffect(() => { localStorage.setItem('bakery_products_v2', JSON.stringify(products)); }, [products]);
-  useEffect(() => { localStorage.setItem('bakery_orders_v2', JSON.stringify(orders)); }, [orders]);
-  useEffect(() => { localStorage.setItem('bakery_customers_v2', JSON.stringify(customers)); }, [customers]);
-
-  /* --- INGREDIENTS --- */
-  const addIngredient = (ing: Ingredient) => setIngredients(prev => [...prev, ing]);
-  
-  const updateIngredientStock = (id: string, newAmount: number, newUnitCost?: number) => {
-    setIngredients(prev => prev.map(ing => {
-      if (ing.id !== id) return ing;
-
-      // Weighted Average Cost Logic
-      if (newAmount > ing.currentStock && newUnitCost !== undefined && newUnitCost > 0) {
-        const addedAmountBase = newAmount - ing.currentStock;
-        const currentStockDisplay = fromBaseUnit(ing.currentStock, ing.unit);
-        const addedAmountDisplay = fromBaseUnit(addedAmountBase, ing.unit);
-        const newTotalDisplay = fromBaseUnit(newAmount, ing.unit);
-
-        const oldValue = currentStockDisplay * ing.costPerUnit;
-        const newValue = addedAmountDisplay * newUnitCost;
-        
-        const newAverageCost = newTotalDisplay > 0 ? (oldValue + newValue) / newTotalDisplay : ing.costPerUnit;
-        
-        return { 
-          ...ing, 
-          currentStock: newAmount,
-          costPerUnit: Math.round(newAverageCost)
-        };
+  // Sync with Firestore
+  useEffect(() => {
+    const unsubIngredients = onSnapshot(collection(db, 'ingredients'), (snap) => {
+      const data = snap.docs.map(d => ({ ...d.data(), id: d.id } as Ingredient));
+      setIngredients(data);
+      // Seed if empty on first load
+      if (data.length === 0 && !localStorage.getItem('db_seeded')) {
+        seedDatabase();
       }
-      return { ...ing, currentStock: newAmount };
-    }));
+    });
+
+    const unsubProducts = onSnapshot(collection(db, 'products'), (snap) => {
+      setProducts(snap.docs.map(d => ({ ...d.data(), id: d.id } as Product)));
+    });
+
+    const unsubOrders = onSnapshot(collection(db, 'orders'), (snap) => {
+      setOrders(snap.docs.map(d => ({ ...d.data(), id: d.id } as Order)));
+    });
+
+    const unsubCustomers = onSnapshot(collection(db, 'customers'), (snap) => {
+      setCustomers(snap.docs.map(d => ({ ...d.data(), id: d.id } as Customer)));
+    });
+
+    setLoading(false);
+
+    return () => {
+      unsubIngredients();
+      unsubProducts();
+      unsubOrders();
+      unsubCustomers();
+    };
+  }, []);
+
+  const seedDatabase = async () => {
+    try {
+      localStorage.setItem('db_seeded', 'true'); // Prevent loop
+      const batch = writeBatch(db);
+
+      // We need to maintain ID relationships for recipes.
+      // Firestore creates random IDs on add(), so we use set() with specific IDs for seeding to keep relationships intact.
+      
+      INITIAL_INGREDIENTS.forEach(ing => {
+        const ref = doc(db, 'ingredients', ing.id);
+        batch.set(ref, ing);
+      });
+      
+      INITIAL_PRODUCTS.forEach(prod => {
+        const ref = doc(db, 'products', prod.id);
+        batch.set(ref, prod);
+      });
+
+      INITIAL_CUSTOMERS.forEach(cust => {
+        const ref = doc(db, 'customers', cust.id);
+        batch.set(ref, cust);
+      });
+
+      INITIAL_ORDERS.forEach(ord => {
+        const ref = doc(db, 'orders', ord.id);
+        batch.set(ref, ord);
+      });
+
+      await batch.commit();
+      console.log('Database seeded with initial data');
+    } catch (e) {
+      console.error('Error seeding database:', e);
+    }
   };
 
-  const deleteIngredient = (id: string) => setIngredients(prev => prev.filter(i => i.id !== id));
+  /* --- INGREDIENTS --- */
+  const addIngredient = async (ing: Ingredient) => {
+    const { id, ...rest } = ing; // Let Firestore handle ID or use addDoc
+    await addDoc(collection(db, 'ingredients'), rest);
+  };
+  
+  const updateIngredientStock = async (id: string, newAmount: number, newUnitCost?: number) => {
+    const ing = ingredients.find(i => i.id === id);
+    if (!ing) return;
+
+    let updates: Partial<Ingredient> = { currentStock: newAmount };
+
+    // Weighted Average Cost Logic
+    if (newAmount > ing.currentStock && newUnitCost !== undefined && newUnitCost > 0) {
+      const addedAmountBase = newAmount - ing.currentStock;
+      const currentStockDisplay = fromBaseUnit(ing.currentStock, ing.unit);
+      const addedAmountDisplay = fromBaseUnit(addedAmountBase, ing.unit);
+      const newTotalDisplay = fromBaseUnit(newAmount, ing.unit);
+
+      const oldValue = currentStockDisplay * ing.costPerUnit;
+      const newValue = addedAmountDisplay * newUnitCost;
+      
+      const newAverageCost = newTotalDisplay > 0 ? (oldValue + newValue) / newTotalDisplay : ing.costPerUnit;
+      updates.costPerUnit = Math.round(newAverageCost);
+    }
+
+    const ref = doc(db, 'ingredients', id);
+    await updateDoc(ref, updates);
+  };
+
+  const deleteIngredient = async (id: string) => {
+    await deleteDoc(doc(db, 'ingredients', id));
+  };
 
   /* --- PRODUCTS --- */
-  const addProduct = (prod: Product) => setProducts(prev => [...prev, prod]);
-  const updateProduct = (updated: Product) => setProducts(prev => prev.map(p => p.id === updated.id ? updated : p));
-  const deleteProduct = (id: string) => setProducts(prev => prev.filter(p => p.id !== id));
+  const addProduct = async (prod: Product) => {
+    const { id, ...rest } = prod;
+    await addDoc(collection(db, 'products'), rest);
+  };
+  
+  const updateProduct = async (updated: Product) => {
+    const { id, ...rest } = updated;
+    await updateDoc(doc(db, 'products', id), rest);
+  };
+  
+  const deleteProduct = async (id: string) => {
+    await deleteDoc(doc(db, 'products', id));
+  };
   
   /* --- CUSTOMERS --- */
-  const addCustomer = (customer: Customer) => setCustomers(prev => [...prev, customer]);
-  const updateCustomer = (updated: Customer) => setCustomers(prev => prev.map(c => c.id === updated.id ? updated : c));
-  const deleteCustomer = (id: string) => setCustomers(prev => prev.filter(c => c.id !== id));
+  const addCustomer = async (customer: Customer) => {
+    const { id, ...rest } = customer;
+    await addDoc(collection(db, 'customers'), rest);
+  };
+  
+  const updateCustomer = async (updated: Customer) => {
+    const { id, ...rest } = updated;
+    await updateDoc(doc(db, 'customers', id), rest);
+  };
+  
+  const deleteCustomer = async (id: string) => {
+    await deleteDoc(doc(db, 'customers', id));
+  };
 
   /* --- ORDERS --- */
-  const addOrder = (order: Order) => setOrders(prev => [order, ...prev]);
-  const deleteOrder = (id: string) => setOrders(prev => prev.filter(o => o.id !== id));
+  const addOrder = async (order: Order) => {
+    const { id, ...rest } = order;
+    await addDoc(collection(db, 'orders'), rest);
+  };
+  
+  const deleteOrder = async (id: string) => {
+    await deleteDoc(doc(db, 'orders', id));
+  };
 
-  const updateOrderStatus = useCallback((orderId: string, newStatus: OrderStatus) => {
-    setOrders(prevOrders => {
-      const orderIndex = prevOrders.findIndex(o => o.id === orderId);
-      if (orderIndex === -1) return prevOrders;
+  const updateOrderStatus = useCallback(async (orderId: string, newStatus: OrderStatus) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
 
-      const order = prevOrders[orderIndex];
-      const oldStatus = order.status;
+    const oldStatus = order.status;
 
-      // Deduct stock only when moving TO Completed from a non-completed state
-      if (newStatus === 'Completado' && oldStatus !== 'Completado') {
-        deductStockForOrder(order);
-      }
+    // Deduct stock only when moving TO Completed from a non-completed state
+    if (newStatus === 'Completado' && oldStatus !== 'Completado') {
+      await deductStockForOrder(order);
+    }
 
-      const updatedOrders = [...prevOrders];
-      updatedOrders[orderIndex] = { ...order, status: newStatus };
-      return updatedOrders;
-    });
-  }, [products]); 
+    await updateDoc(doc(db, 'orders', orderId), { status: newStatus });
+  }, [orders, products, ingredients]); 
 
-  const deductStockForOrder = (order: Order) => {
+  const deductStockForOrder = async (order: Order) => {
     const usageMap = new Map<string, number>(); 
 
     order.items.forEach(item => {
@@ -191,21 +278,56 @@ export const BakeryProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       });
     });
 
-    setIngredients(prevIngredients => prevIngredients.map(ing => {
-      const deduction = usageMap.get(ing.id);
-      if (deduction) {
-        return { ...ing, currentStock: Math.max(0, ing.currentStock - deduction) };
+    const batch = writeBatch(db);
+    
+    usageMap.forEach((amountToDeduct, ingId) => {
+      const ing = ingredients.find(i => i.id === ingId);
+      if (ing) {
+        const newStock = Math.max(0, ing.currentStock - amountToDeduct);
+        const ref = doc(db, 'ingredients', ingId);
+        batch.update(ref, { currentStock: newStock });
       }
-      return ing;
-    }));
+    });
+
+    await batch.commit();
   };
 
   /* --- DATABASE RESTORE --- */
-  const restoreDatabase = (data: any) => {
-    if (data.ingredients) setIngredients(data.ingredients);
-    if (data.products) setProducts(data.products);
-    if (data.orders) setOrders(data.orders);
-    if (data.customers) setCustomers(data.customers);
+  const restoreDatabase = async (data: any) => {
+    const batch = writeBatch(db);
+    
+    // Helper to batch adds. 
+    // Note: This replaces data by adding new docs. 
+    // Ideally, one would clear the collection first, but that requires listing all docs.
+    // For simplicity in this context, we will add/merge.
+    
+    if (data.ingredients) {
+      data.ingredients.forEach((item: any) => {
+         // Create a new ref to avoid ID collision or use existing ID if provided
+         const ref = item.id ? doc(db, 'ingredients', item.id) : doc(collection(db, 'ingredients'));
+         batch.set(ref, item);
+      });
+    }
+    if (data.products) {
+      data.products.forEach((item: any) => {
+         const ref = item.id ? doc(db, 'products', item.id) : doc(collection(db, 'products'));
+         batch.set(ref, item);
+      });
+    }
+    if (data.orders) {
+      data.orders.forEach((item: any) => {
+         const ref = item.id ? doc(db, 'orders', item.id) : doc(collection(db, 'orders'));
+         batch.set(ref, item);
+      });
+    }
+    if (data.customers) {
+      data.customers.forEach((item: any) => {
+         const ref = item.id ? doc(db, 'customers', item.id) : doc(collection(db, 'customers'));
+         batch.set(ref, item);
+      });
+    }
+
+    await batch.commit();
   };
 
   return (
@@ -214,6 +336,7 @@ export const BakeryProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       products,
       orders,
       customers,
+      loading,
       addIngredient,
       updateIngredientStock,
       deleteIngredient,
