@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useBakery } from '../context/BakeryContext';
 import { suggestRecipe, analyzeProductionData } from '../services/geminiService';
-import { Sparkles, MessageSquare, Loader2, BarChart2 } from 'lucide-react';
+import { Sparkles, MessageSquare, Loader2, BarChart2, AlertCircle } from 'lucide-react';
 
 export const AiAssistant: React.FC = () => {
   const { ingredients, orders } = useBakery();
@@ -9,15 +9,19 @@ export const AiAssistant: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [response, setResponse] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const handleRecipeSuggest = async () => {
     if (!prompt) return;
     setLoading(true);
+    setErrorMsg(null);
+    setResponse('');
     try {
       const result = await suggestRecipe(ingredients, prompt);
       setResponse(result || 'No se pudo generar respuesta.');
-    } catch (error) {
-      setResponse('Error al conectar con el Chef IA.');
+    } catch (error: any) {
+      console.error(error);
+      setErrorMsg(`Error: ${error.message || 'No se pudo conectar con el Chef IA.'}`);
     } finally {
       setLoading(false);
     }
@@ -25,11 +29,14 @@ export const AiAssistant: React.FC = () => {
 
   const handleAnalysis = async () => {
     setLoading(true);
+    setErrorMsg(null);
+    setResponse('');
     try {
       const result = await analyzeProductionData(orders, ingredients);
       setResponse(result || 'Sin datos suficientes.');
-    } catch (error) {
-      setResponse('Error analizando datos.');
+    } catch (error: any) {
+      console.error(error);
+      setErrorMsg(`Error: ${error.message || 'Error analizando datos.'}`);
     } finally {
       setLoading(false);
     }
@@ -48,13 +55,13 @@ export const AiAssistant: React.FC = () => {
 
       <div className="flex gap-4 border-b border-slate-200">
         <button
-          onClick={() => { setActiveTab('recipe'); setResponse(''); }}
+          onClick={() => { setActiveTab('recipe'); setResponse(''); setErrorMsg(null); }}
           className={`pb-2 px-4 font-medium transition-colors ${activeTab === 'recipe' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-slate-500'}`}
         >
           Consultas & Recetas
         </button>
         <button
-          onClick={() => { setActiveTab('analysis'); setResponse(''); }}
+          onClick={() => { setActiveTab('analysis'); setResponse(''); setErrorMsg(null); }}
           className={`pb-2 px-4 font-medium transition-colors ${activeTab === 'analysis' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-slate-500'}`}
         >
           Análisis de Negocio
@@ -97,8 +104,16 @@ export const AiAssistant: React.FC = () => {
           </div>
         )}
 
+        {/* Error Message Area */}
+        {errorMsg && (
+          <div className="mt-8 p-4 bg-red-50 text-red-700 rounded-lg border border-red-200 flex items-center gap-2">
+            <AlertCircle size={20} />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
         {/* Response Area */}
-        {(response || loading) && (
+        {(response || loading) && !errorMsg && (
           <div className="mt-8 p-6 bg-slate-50 rounded-xl border border-slate-200">
             {loading ? (
               <div className="flex flex-col items-center justify-center py-8 text-slate-500">
@@ -115,4 +130,4 @@ export const AiAssistant: React.FC = () => {
       </div>
     </div>
   );
-};
+}

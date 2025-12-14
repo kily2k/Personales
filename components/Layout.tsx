@@ -60,8 +60,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange
            <NavItem id="orders" label="Pedidos" icon={ShoppingCart} active={activeTab === 'orders'} onClick={onTabChange} />
            <NavItem id="production" label="Prod." icon={CalendarDays} active={activeTab === 'production'} onClick={onTabChange} />
            <NavItem id="inventory" label="Inv." icon={Package} active={activeTab === 'inventory'} onClick={onTabChange} />
-           <NavItem id="ai-assistant" label="Chef IA" icon={Sparkles} active={activeTab === 'ai-assistant'} onClick={onTabChange} />
            <NavItem id="recipes" label="Recetas" icon={ChefHat} active={activeTab === 'recipes'} onClick={onTabChange} />
+           <NavItem id="ai-assistant" label="Chef IA" icon={Sparkles} active={activeTab === 'ai-assistant'} onClick={onTabChange} />
+           
+           {/* Management Section */}
+           <div className="w-px bg-slate-200 mx-1 shrink-0 h-8 self-center" /> 
+           <NavItem id="customers" label="Clientes" icon={Users} active={activeTab === 'customers'} onClick={onTabChange} />
+           <NavItem id="reports" label="Reportes" icon={FileText} active={activeTab === 'reports'} onClick={onTabChange} />
+           <NavItem id="database" label="BD" icon={Database} active={activeTab === 'database'} onClick={onTabChange} />
         </div>
       </nav>
     </div>

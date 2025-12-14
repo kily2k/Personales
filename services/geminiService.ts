@@ -2,34 +2,34 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Ingredient, Product, Order, UnitType } from "../types";
 import { formatStock } from "../utils/conversions";
 
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
-
-// Helper to get the model
-const getModel = () => {
-    return 'gemini-2.5-flash';
-};
+// Initialize Gemini API Client strictly following the guidelines
+// The API key is injected by Vite via define: { 'process.env.API_KEY': ... }
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const suggestRecipe = async (availableIngredients: Ingredient[], prompt: string) => {
   const ingredientList = availableIngredients.map(i => `${i.name} (${formatStock(i.currentStock, i.unit)})`).join(', ');
   
-  const response = await ai.models.generateContent({
-    model: getModel(),
-    contents: `Soy un pastelero con los siguientes ingredientes en stock: ${ingredientList}. ${prompt}`,
-    config: {
-      systemInstruction: "Eres un Chef Pastelero experto y creativo. Sugiere recetas detalladas o consejos basados en el inventario disponible. Sé conciso y profesional.",
-    }
-  });
-  return response.text;
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Soy un pastelero con los siguientes ingredientes en stock: ${ingredientList}. ${prompt}`,
+      config: {
+        systemInstruction: "Eres un Chef Pastelero experto y creativo. Sugiere recetas detalladas o consejos basados en el inventario disponible. Sé conciso y profesional.",
+      }
+    });
+    return response.text;
+  } catch (error) {
+    console.error("Gemini API Error (suggestRecipe):", error);
+    throw error;
+  }
 };
 
-// Keeps compatibility with potential string parsing needs, although simpler in new app
 export const parseOrderFromText = async (text: string, products: Product[]): Promise<any> => {
   const productNames = products.map(p => p.name).join(', ');
   
   try {
     const response = await ai.models.generateContent({
-      model: getModel(),
+      model: 'gemini-2.5-flash',
       contents: `Texto del pedido: "${text}"`,
       config: {
         systemInstruction: `Extrae la información del pedido en formato JSON.
@@ -56,9 +56,13 @@ export const parseOrderFromText = async (text: string, products: Product[]): Pro
       }
     });
 
-    return JSON.parse(response.text);
+    // Handle potential markdown code blocks in response
+    let cleanText = response.text || "{}";
+    cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '').trim();
+
+    return JSON.parse(cleanText);
   } catch (e) {
-    console.error("Error parsing order", e);
+    console.error("Gemini API Error (parseOrderFromText):", e);
     return null;
   }
 };
@@ -79,19 +83,24 @@ export const analyzeProductionData = async (orders: Order[], inventory: Ingredie
         min: i.minStock 
     })));
 
-    const response = await ai.models.generateContent({
-        model: getModel(),
-        contents: `Analiza estos datos de producción. 
-        Pedidos pendientes: ${orderSummary}
-        Inventario actual: ${inventorySummary}
-        
-        Dame un resumen ejecutivo de 3 puntos:
-        1. Estado de riesgo del inventario.
-        2. Eficiencia de producción sugerida.
-        3. Una idea creativa para vender el excedente de stock (si lo hay) o mejorar ventas.`,
-        config: {
-             systemInstruction: "Eres un consultor de negocios de pastelería.",
-        }
-    });
-    return response.text;
+    try {
+      const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: `Analiza estos datos de producción. 
+          Pedidos pendientes: ${orderSummary}
+          Inventario actual: ${inventorySummary}
+          
+          Dame un resumen ejecutivo de 3 puntos:
+          1. Estado de riesgo del inventario.
+          2. Eficiencia de producción sugerida.
+          3. Una idea creativa para vender el excedente de stock (si lo hay) o mejorar ventas.`,
+          config: {
+              systemInstruction: "Eres un consultor de negocios de pastelería.",
+          }
+      });
+      return response.text;
+    } catch (error) {
+      console.error("Gemini API Error (analyzeProductionData):", error);
+      throw error;
+    }
 }
