@@ -2,11 +2,16 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Ingredient, Product, Order, UnitType } from "../types";
 import { formatStock } from "../utils/conversions";
 
-// Initialize Gemini API Client strictly following the guidelines
-// The API key is injected by Vite via define: { 'process.env.API_KEY': ... }
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Initialize Gemini API Client safely
+// If API_KEY is missing (empty string), we don't instantiate the client immediately to avoid errors.
+const apiKey = process.env.API_KEY || "";
+const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
 export const suggestRecipe = async (availableIngredients: Ingredient[], prompt: string) => {
+  if (!ai) {
+    throw new Error("API Key no configurada. Configura la variable de entorno API_KEY.");
+  }
+
   const ingredientList = availableIngredients.map(i => `${i.name} (${formatStock(i.currentStock, i.unit)})`).join(', ');
   
   try {
@@ -25,6 +30,8 @@ export const suggestRecipe = async (availableIngredients: Ingredient[], prompt: 
 };
 
 export const parseOrderFromText = async (text: string, products: Product[]): Promise<any> => {
+  if (!ai) return null;
+
   const productNames = products.map(p => p.name).join(', ');
   
   try {
@@ -68,6 +75,10 @@ export const parseOrderFromText = async (text: string, products: Product[]): Pro
 };
 
 export const analyzeProductionData = async (orders: Order[], inventory: Ingredient[]) => {
+    if (!ai) {
+      throw new Error("API Key no configurada.");
+    }
+
     // Simplify orders for prompt
     const orderSummary = JSON.stringify(orders.map(o => ({
         customer: o.customerName,
