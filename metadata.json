@@ -1,0 +1,5 @@
+{
+  "name": "Pastelería PRO - Gestión Inteligente",
+  "description": "Una aplicación web mobile-first para la gestión integral de pastelerías. Incluye control de inventario con alertas de stock, gestión de recetas, pedidos y cálculo automático de listas de producción.",
+  "requestFramePermissions": []
+}
